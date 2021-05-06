@@ -1,1 +1,10 @@
 *.nim~
+*.c
+*.c.o
+lib/compile_libqioc.sh
+lib/liblime.a
+lib/libqio.a
+lib/make.objs
+lib/nimbase.h
+lib/qioc.deps
+lib/qioc.json

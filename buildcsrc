@@ -28,6 +28,9 @@ opts+=("--gc:arc" "-d:useMalloc")
 echo nim "${opts[@]}" qioc.nim
 nim "${opts[@]}" qioc.nim
 
+if [ ! -e $inc ]; then
+    mkdir $inc
+fi
 mv qio.h $inc
 
 nim=`cat $csrc/compile_libqioc.sh |tr ' ' '\n' |grep '^-I' |head -n1 |sed 's/-I//'`
