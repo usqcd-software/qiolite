@@ -1,0 +1,39 @@
+#!/bin/bash
+
+src="src"
+csrc="../lib"
+inc="../include"
+
+cd $src
+
+opts=("c")
+#opts+=("-c" "--nimcache:$csrc" "--genScript" "--header")
+opts+=("--noLinking" "--nimcache:$csrc" "--genScript")
+opts+=("--noMain")
+opts+=("--listCmd")
+opts+=("-d:danger")
+#opts+=("--app:staticlib")
+opts+=("--app:lib")
+opts+=("--threads:on")
+#opts="$opts --app:lib"
+#opts+=("--gcc.options.always:-g -Wall")
+#opts="$opts --gcc.options.always:$gccopts"
+#opts="$opts --gcc.options.always:-Wall -Wno-unused-but-set-variable"
+#opts="$opts -d:nimLinkerWeakSymbols"
+#opts+=("--os:any" "--gc:arc" "-d:useMalloc")
+opts+=("--gc:arc" "-d:useMalloc")
+#opts+=("-d:useMalloc")
+#opts+=("--gc:markAndSweep")
+
+echo nim "${opts[@]}" qioc.nim
+nim "${opts[@]}" qioc.nim
+
+mv qio.h $inc
+
+nim=`cat $csrc/compile_libqioc.sh |tr ' ' '\n' |grep '^-I' |head -n1 |sed 's/-I//'`
+echo $nim
+cp -a $nim/nimbase.h $csrc
+
+#objs=`cat $csrc/compile_libqioc.sh |tr ' ' '\n' |grep '\.c$' |sed 's/\.c$/.o/'`
+#echo $objs
+python3 ../getobjs.py $csrc
