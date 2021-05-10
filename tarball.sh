@@ -11,6 +11,7 @@ tar cvzf $t $f
 rm $n
 
 test() {
+    if [ ! -e tmp ]; then mkdir tmp; fi
     cd tmp
     rm -rf $n
     tar zxvf ../$t

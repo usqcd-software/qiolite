@@ -15,7 +15,7 @@ proc createCrcTable(): array[0..255, Crc32] =
 
 const crc32table = createCrcTable()
 
-proc updateCrc32*(crc: Crc32, c: char): Crc32 =
+proc updateCrc32*(crc: Crc32, c: char): Crc32 {.inline.} =
   (crc shr 8) xor crc32table[(crc and 0xff) xor uint32(ord(c))]
 
 proc updateCrc32*(crc: Crc32, buf: pointer, bytes: int): Crc32 =
@@ -24,7 +24,7 @@ proc updateCrc32*(crc: Crc32, buf: pointer, bytes: int): Crc32 =
   for i in 0..<bytes:
     result = updateCrc32(result, cbuf[i])
 
-proc finishCrc32*(c: Crc32): Crc32 =
+proc finishCrc32*(c: Crc32): Crc32 {.inline.} =
   not c
 
 proc crc32Raw*(s: string, init=InitCrc32): Crc32 =

@@ -1,5 +1,5 @@
 import endians, bitops
-template `&`(s: string): untyped = unsafeaddr s[0]
+template `*`(s: string): untyped = unsafeaddr s[0]
 
 template swapEndian(x: var int16|uint16) =
   var y = x
@@ -67,6 +67,7 @@ type
     header*: LimeHeader
 
 template echo0*(lr: LimeReader, args: varargs[untyped]) =
+  mixin echo0
   lr.reader.echo0 args
 
 proc readHeader(lr: var LimeReader) =
@@ -191,7 +192,7 @@ proc write*(lw: var LimeWriter, s: string) =
     quit(-1)
   if s.len > n:
     echo "Lime: write string length ", s.len, " larger than record length ", n
-  lw.write(&s)
+  lw.write(*s)
 
 
 proc testRead(r: var any) =

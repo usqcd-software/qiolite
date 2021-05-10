@@ -1,7 +1,12 @@
 import pio, lime, crc32
-import xmlparser, xmltree, strutils, sequtils, bitops, endians, times
+import xmlparser, xmltree, strutils, sequtils, bitops, endians, strformat,
+       times, std/monotimes
+export pio
 template `+`(x: pointer, i: SomeInteger): untyped =
   cast[pointer](cast[ByteAddress](x) + ByteAddress(i))
+proc `$`(dur: Duration): string =
+  let sec = 1e-6*dur.inMicroseconds.float
+  result = sec.formatFloat(ffDecimal, 6)
 
 type
   ScidacChecksum* = tuple[a: uint32, b: uint32]
@@ -33,6 +38,7 @@ type
 
 type
   ScidacReader* = ref object
+    verbosity*: int
     lr*: LimeReader[Reader]
     privateFileXml*: string
     lattice*: seq[int]
@@ -83,8 +89,9 @@ proc nextRecord*(sr: var ScidacReader) =
   sr.localChecksum.init
   sr.checksum.init
 
-proc newScidacReader*(fn: string): ScidacReader =
+proc newScidacReader*(fn: string, verb=0): ScidacReader =
   new result
+  result.verbosity = verb
   var r = newReader(fn)
   var lr = newLimeReader(r)
   result.lr = lr
@@ -161,6 +168,7 @@ proc byterev64(buf: pointer, nbytes: int) =
     swapEndian64(addr b[i], addr x)
 
 proc readBinary*(sr: var ScidacReader; buf: pointer; sublattice,offsets: seq[int]) =
+  let t0 = getMonoTime()
   if sr.lr.header.limetypeString != "scidac-binary-data" and
      sr.lr.header.limetypeString != "ildg-binary-data":
     echo "ScidacReader: unexpected limetype ", sr.lr.header.limetypeString,
@@ -179,6 +187,7 @@ proc readBinary*(sr: var ScidacReader; buf: pointer; sublattice,offsets: seq[int
   if nread != nsites*sitebytes:
     echo "Error: readBinary short read ", nread, " expected ", nsites*sitebytes
     quit(-1)
+  let t1 = getMonoTime()
   when true:
     let chksums = checksumHyper(buf, sitebytes, sr.lattice, sublattice, offsets)
   else:
@@ -196,11 +205,15 @@ proc readBinary*(sr: var ScidacReader; buf: pointer; sublattice,offsets: seq[int
   #echo chksums
   sr.localChecksum.a = sr.localChecksum.a xor chksums.a
   sr.localChecksum.b = sr.localChecksum.b xor chksums.b
+  let t2 = getMonoTime()
   if sr.lr.byterev:
     if sr.record.precision == "F":
       byterev32(buf, nread)
     else:
       byterev64(buf, nread)
+  let t3 = getMonoTime()
+  if sr.verbosity >= 1:
+    sr.echo0 &"readBinary seconds read: {t1-t0} cksum: {t2-t1} byterev: {t3-t2}"
 
 proc finishReadBinary*(sr: var ScidacReader) =
   if sr.lr.header.limetypeString != "scidac-binary-data" and
@@ -230,6 +243,7 @@ proc finishReadBinary*(sr: var ScidacReader) =
 
 type
   ScidacWriter* = ref object
+    verbosity*: int
     lw*: LimeWriter[Writer]
     privateFileXml*: string
     lattice*: seq[int]
@@ -338,8 +352,9 @@ proc setRecordGauge*(sw: var ScidacWriter, prec: string, nc = 3) =
   r.typesize = nc*nc*2*(if prec=="F": 4 else: 8)
   r.datacount = sw.lattice.len
 
-proc newScidacWriter*(fn: string, lattice: seq[int], fmd: string): ScidacWriter =
+proc newScidacWriter*(fn: string, lattice: seq[int], fmd: string, verb=0): ScidacWriter =
   new result
+  result.verbosity = verb
   var w = newWriter(fn)
   var lw = newLimeWriter(w)
   result.lw = lw
@@ -378,6 +393,7 @@ proc initWriteBinary*(sw: var ScidacWriter; rmd: string) =
 
 # write hypercube data
 proc writeBinary*(sw: var ScidacWriter; buf: pointer; sublattice,offsets: seq[int]) =
+  let t0 = getMonoTime()
   let nsites = sublattice.foldl(a*b)
   let sitebytes = sw.record.typesize * sw.record.datacount
   let outbytes = nsites * sitebytes
@@ -386,7 +402,7 @@ proc writeBinary*(sw: var ScidacWriter; buf: pointer; sublattice,offsets: seq[in
       byterev32(buf, outbytes)
     else:
       byterev64(buf, outbytes)
-
+  let t1 = getMonoTime()
   when true:
     let chksum = checksumHyper(buf, sitebytes, sw.lattice, sublattice, offsets)
   else:
@@ -404,11 +420,14 @@ proc writeBinary*(sw: var ScidacWriter; buf: pointer; sublattice,offsets: seq[in
     let chksum = chksums0 + chksums1
   #echo chksum
   sw.checksum = sw.checksum + chksum
-
+  let t2 = getMonoTime()
   let nwrite = sw.lw.writer.write(buf, sitebytes, sw.lattice, sublattice, offsets)
   if nwrite != outbytes:
     echo "Error: writeBinary short write ", nwrite, " expected ", outbytes
     quit(-1)
+  let t3 = getMonoTime()
+  if sw.verbosity >= 1:
+    sw.echo0 &"writeBinary seconds byterev: {t1-t0} cksum: {t2-t1} write: {t3-t2}"
 
 proc finishWriteBinary*(sw: var ScidacWriter) =
   let pchksum = cast[ptr uint64](addr sw.checksum)

@@ -161,11 +161,14 @@ proc read*(rd: var Reader; buf: pointer; elemsize: int;
   result = toInt(nread)
 
   err = MPI_File_set_view(rd.fh, disp0, etype0, filetype0, datarep0, info)
-
+  discard MPI_Type_free(addr filetype)
+  discard MPI_Type_free(addr subtype)
 
 ## Writer
 
 type
+  WriteMode* = enum
+    wmCreat, wmTrunc, wmAppend
   Writer* = ref object
     filename*: string
     isOpen*: bool
@@ -200,6 +203,7 @@ proc open(wr: var Writer) =
     quit(-1)
   wr.isOpen = true
 
+#proc newWriter*(fn: string, wm: WriteMode): Writer =
 proc newWriter*(fn: string): Writer =
   result.new
   var inited = 0'i32
@@ -310,6 +314,8 @@ proc write*(wr: var Writer; buf: pointer; elemsize: int;
   result = toInt(nwrite)
 
   err = MPI_File_set_view(wr.fh, disp0, etype0, filetype0, datarep0, info)
+  discard MPI_Type_free(addr filetype)
+  discard MPI_Type_free(addr subtype)
 
 when isMainModule:
   import os

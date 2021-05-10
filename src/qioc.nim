@@ -1,6 +1,6 @@
 import exporth
 import scidacio
-import strutils
+import strutils, strformat, times, std/monotimes
 include system/ansi_c
 template toHex(x: ptr typed): untyped = toHex(cast[uint](x))
 template `+`(x: ptr char, i: SomeInteger): untyped =
@@ -20,6 +20,9 @@ proc toSeq[T](p: ptr UncheckedArray[T], n: SomeInteger): seq[T] =
 proc toSeq[T,R](p: ptr UncheckedArray[T], n: SomeInteger, r: typedesc[R]): seq[R] =
   result.newSeq(n)
   for i in 0..<n: result[i] = R(p[][i])
+proc `$`(dur: Duration): string =
+  let sec = 1e-6*dur.inMicroseconds.float
+  result = sec.formatFloat(ffDecimal, 6)
 
 {.emit:"#define NimMain NimMain_qioc".}
 proc NimMain_qioc {.importc.}
@@ -29,8 +32,7 @@ proc init =
     inited = true
     NimMain_qioc()
 
-{.pragma: exprt, exporth.}
-
+# accumulate information for creating qio.h
 var eh {.compiletime.} = newExportH()
 
 eh.add:
@@ -333,13 +335,20 @@ eh.add:
     #qr.spins = spins
     #qr.typesize = typesize
 
+  proc QIO_get_comm_type*(): cint =
+    discard # QIO_COMM_SINGLE, QIO_COMM_MPI, ...
+  #proc QIO_get_comm*(): pointer =
+  #  discard
+  proc QIO_set_default_comm*(comm: pointer) =
+    discard
+
   proc QIO_open_read*(xml_file: ptr QIO_String; filename: cstring;
                       layout: ptr QIO_Layout; fs: ptr QIO_Filesystem;
                       iflag: ptr QIO_Iflag): ptr QIO_Reader =
     init()
     result = create(QIO_Reader, 1)
     result.layout = layout
-    var sr = newScidacReader($filename)
+    var sr = newScidacReader($filename, verbosity)
     GC_ref(sr)
     result.reader = cast[pointer](sr)
     QIO_string_set(xml_file, sr.fileMd)
@@ -360,10 +369,13 @@ eh.add:
     if volfmt != QIO_SINGLEFILE:
       echo "ERROR: unsupported volfmt: ", volfmt
       quit(-1)
+    if oflag.mode == QIO_APPEND:
+      echo "ERROR: unsupported mode: QIO_APPEND"
+      quit(-1)
     result = create(QIO_Writer, 1)
     result.layout = layout
     let lat = toSeq(layout.latsize, layout.latdim, int)
-    var wr = newScidacWriter($filename, lat, $xml_file)
+    var wr = newScidacWriter($filename, lat, $xml_file, verbosity)
     GC_ref(wr)
     result.writer = cast[pointer](wr)
 
@@ -382,7 +394,7 @@ eh.add:
   proc QIO_get_reader_latsize*(qr: ptr QIO_Reader): ptr cint =
     var sr = cast[ScidacReader](qr.reader)
     let nd = sr.lattice.len
-    result = create(cint, nd)
+    result = create(cint, nd)   # FIXME: leaks
     var lat = cast[ptr UncheckedArray[cint]](result)
     for i in 0..<nd:
       lat[i] = cint sr.lattice[i]
@@ -419,6 +431,7 @@ eh.add:
                              put: proc (buf: cstring; index: csize_t; count: cint;
                                         arg: pointer) {.nimcall.};
                             datum_size: csize_t; word_size: cint; arg: pointer): cint =
+    let t0 = getMonoTime()
     var sr = cast[ScidacReader](qr.reader)
     template r: untyped = sr.record
     let nsites = qr.layout.sites_on_node
@@ -440,14 +453,20 @@ eh.add:
     for j in 0..<nd:
       sublattice[j] = hypermax[j] - hypermin[j] + 1
     var buf = create(char, nbytes)
+    let t1 = getMonoTime()
     sr.readBinary(buf, sublattice, hypermin)
+    let t2 = getMonoTime()
     for i in countup(0'i32, nsites.int32-1):
       qr.layout.get_coords(&x, this_node, i)
       let j = hyperindex(x, sublattice, hypermin)
       let tbuf = buf + j*datum_size.int
       put(tbuf, uint i, objcount, arg)
     dealloc(buf)
+    let t3 = getMonoTime()
     sr.finishReadBinary
+    let t4 = getMonoTime()
+    if QIO_verbosity() >= QIO_VERB_LOW:
+      sr.echo0 &"QIO_read_record_data seconds layout: {t1-t0} read: {t2-t1} put: {t3-t2} finish: {t4-t3}"
     result = QIO_SUCCESS
 
   proc QIO_next_record*(qr: ptr QIO_Reader): cint =
@@ -471,6 +490,7 @@ eh.add:
                   get: proc(buf: ptr char; index: csize_t; count: cint;
                             arg: pointer) {.nimcall.};
                   datum_size: csize_t; word_size: cint; arg: pointer): cint =
+    let t0 = getMonoTime()
     var sw = cast[ScidacWriter](qw.writer)
     template r: untyped = sw.record
     sw.setRecord()
@@ -505,9 +525,14 @@ eh.add:
       let j = hyperindex(x, sublattice, hypermin)
       let tbuf = buf + j*datum_size.int
       get(tbuf, uint i, objcount, arg)
+    let t1 = getMonoTime()
     sw.writeBinary(buf, sublattice, hypermin)
+    let t2 = getMonoTime()
     dealloc(buf)
     sw.finishWriteBinary()
+    let t3 = getMonoTime()
+    if QIO_verbosity() >= QIO_VERB_LOW:
+      sw.echo0 &"QIO_write seconds setup: {t1-t0} write: {t2-t1} finish: {t3-t2}"
     result = QIO_SUCCESS
 
 eh.write("qio.h")
