@@ -1,4 +1,10 @@
+## Crc32
+## x4 and x8 versions adapted from
+##  https://create.stephan-brumme.com/crc32
+
 import strutils
+template `+=`[T](p: var ptr UncheckedArray[T], n: int) =
+  p = cast[ptr UncheckedArray[T]](addr p[n])
 
 type Crc32* = uint32
 const InitCrc32* = Crc32(not 0'u32)
@@ -13,35 +19,105 @@ proc createCrcTable(): array[0..255, Crc32] =
       else: rem = rem shr 1
     result[i] = rem
 
-const crc32table = createCrcTable()
+proc createCrcTable8(): array[8,array[256, Crc32]] =
+  for i in 0..255:
+    var rem = Crc32(i)
+    for j in 0..7:
+      if (rem and 1) > 0'u32: rem = (rem shr 1) xor crc32PolyLow
+      else: rem = rem shr 1
+    result[0][i] = rem
+  for i in 0..255:
+    result[1][i] = (result[0][i] shr 8) xor result[0][result[0][i] and 0xFF]
+    result[2][i] = (result[1][i] shr 8) xor result[0][result[1][i] and 0xFF]
+    result[3][i] = (result[2][i] shr 8) xor result[0][result[2][i] and 0xFF]
+    result[4][i] = (result[3][i] shr 8) xor result[0][result[3][i] and 0xFF]
+    result[5][i] = (result[4][i] shr 8) xor result[0][result[4][i] and 0xFF]
+    result[6][i] = (result[5][i] shr 8) xor result[0][result[5][i] and 0xFF]
+    result[7][i] = (result[6][i] shr 8) xor result[0][result[6][i] and 0xFF]
 
-proc updateCrc32*(crc: Crc32, c: char): Crc32 {.inline.} =
+#const crc32table = createCrcTable()
+const crc32table8 = createCrcTable8()
+template crc32table: untyped = crc32table8[0]
+
+proc updateCrc32(crc: Crc32, c: char): Crc32 {.inline.} =
   (crc shr 8) xor crc32table[(crc and 0xff) xor uint32(ord(c))]
 
-proc updateCrc32*(crc: Crc32, buf: pointer, bytes: int): Crc32 =
+proc updateCrc32x1(crc: Crc32, buf: pointer, nbytes: int): Crc32 {.inline.} =
   let cbuf = cast[ptr UncheckedArray[char]](buf)
   result = crc
-  for i in 0..<bytes:
+  for i in 0..<nbytes:
     result = updateCrc32(result, cbuf[i])
+
+# FIXME: little endian only
+proc updateCrc32x4(crc: Crc32, buf: pointer, nbytes: int): Crc32 {.inline.} =
+  result = crc
+  var current = cast[ptr UncheckedArray[Crc32]](buf)
+  var n = nbytes
+  while n >= 4:
+    result = result xor current[0]
+    result = crc32table8[3][ result         and 0xFF] xor
+             crc32table8[2][(result shr 8 ) and 0xFF] xor
+             crc32table8[1][(result shr 16) and 0xFF] xor
+             crc32table8[0][ result shr 24          ]
+    current += 1
+    n -= 4
+  var currentChar = cast[ptr UncheckedArray[char]](current)
+  while n > 0:
+    result = (result shr 8) xor
+             crc32table8[0][(result and 0xFF) xor Crc32(currentChar[0])]
+    currentChar += 1
+    n -= 1
+
+# FIXME: little endian only
+proc updateCrc32x8(crc: Crc32, buf: pointer, nbytes: int): Crc32 {.inline.} =
+  result = crc
+  var current = cast[ptr UncheckedArray[Crc32]](buf)
+  var n = nbytes
+  while n >= 8:
+    let one = result xor current[0]
+    let two = current[1]
+    result = crc32table8[7][ one         and 0xFF] xor
+             crc32table8[6][(one shr  8) and 0xFF] xor
+             crc32table8[5][(one shr 16) and 0xFF] xor
+             crc32table8[4][ one shr 24          ] xor
+             crc32table8[3][ two         and 0xFF] xor
+             crc32table8[2][(two shr  8) and 0xFF] xor
+             crc32table8[1][(two shr 16) and 0xFF] xor
+             crc32table8[0][ two shr 24          ]
+    current += 2
+    n -= 8
+  var currentChar = cast[ptr UncheckedArray[char]](current)
+  while n > 0:
+    result = (result shr 8) xor
+             crc32table8[0][(result and 0xFF) xor Crc32(currentChar[0])]
+    currentChar += 1
+    n -= 1
+
+template updateCrc32(crc: Crc32, buf: pointer, nbytes: int): Crc32 =
+  #updateCrc32x1(crc, buf, nbytes)
+  #updateCrc32x4(crc, buf, nbytes)
+  updateCrc32x8(crc, buf, nbytes)
 
 proc finishCrc32*(c: Crc32): Crc32 {.inline.} =
   not c
 
+proc crc32Raw*(buf: pointer, nbytes: int, init=InitCrc32): Crc32 =
+  result = updateCrc32(init, buf, nbytes)
+
 proc crc32Raw*(s: string, init=InitCrc32): Crc32 =
-  result = init
-  for c in s:
-    result = updateCrc32(result, c)
+  let buf = cast[pointer](unsafeaddr s[0])
+  let nbytes = s.len
+  result = updateCrc32(init, buf, nbytes)
+
+proc crc32*(buf: pointer, nbytes: int): Crc32 =
+  result = updateCrc32(InitCrc32, buf, nbytes)
+  result = finishCrc32(result)
 
 proc crc32*(s: string): Crc32 =
   ## Compute the Crc32 on the string `s`
-  result = crc32Raw(s, InitCrc32)
-  result = finishCrc32(result)
-
-proc crc32*(buf: pointer, nbytes: int): Crc32 =
-  result = InitCrc32
-  let s = cast[ptr UncheckedArray[char]](buf)
-  for i in 0..<nbytes:
-    result = updateCrc32(result, s[i])
+  let buf = cast[pointer](unsafeaddr s[0])
+  let nbytes = s.len
+  result = updateCrc32(InitCrc32, buf, nbytes)
   result = finishCrc32(result)
 
 proc polyMul(x0: uint32, y0: uint64): uint64 =
