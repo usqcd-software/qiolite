@@ -2,7 +2,7 @@
 ## x4 and x8 versions adapted from
 ##  https://create.stephan-brumme.com/crc32
 
-import strutils
+import strutils, endians
 template `+=`[T](p: var ptr UncheckedArray[T], n: int) =
   p = cast[ptr UncheckedArray[T]](addr p[n])
 
@@ -39,6 +39,20 @@ proc createCrcTable8(): array[8,array[256, Crc32]] =
 const crc32table8 = createCrcTable8()
 template crc32table: untyped = crc32table8[0]
 
+proc isLittleEndian(): bool {.inline.} =
+  type
+    intchar {.union.} = object
+      i: int
+      c: array[8,char]
+  var x: intchar
+  x.i = 1
+  result = (x.c[0] == 1.char)
+
+template swap32(x: Crc32): Crc32 =
+  var r {.noInit.}: Crc32
+  swapEndian32(cast[pointer](addr r), cast[pointer](unsafeaddr x))
+  r
+
 proc updateCrc32(crc: Crc32, c: char): Crc32 {.inline.} =
   (crc shr 8) xor crc32table[(crc and 0xff) xor uint32(ord(c))]
 
@@ -48,13 +62,17 @@ proc updateCrc32x1(crc: Crc32, buf: pointer, nbytes: int): Crc32 {.inline.} =
   for i in 0..<nbytes:
     result = updateCrc32(result, cbuf[i])
 
-# FIXME: little endian only
-proc updateCrc32x4(crc: Crc32, buf: pointer, nbytes: int): Crc32 {.inline.} =
-  result = crc
+# need to swap byte order for big endian machine
+template updateCrc32x4Impl(crc: Crc32, buf: pointer,
+                           nbytes: int, doSwap: static[bool]): Crc32 =
+  var result = crc
   var current = cast[ptr UncheckedArray[Crc32]](buf)
   var n = nbytes
   while n >= 4:
-    result = result xor current[0]
+    when doSwap:
+      result = result xor swap32(current[0])
+    else:
+      result = result xor current[0]
     result = crc32table8[3][ result         and 0xFF] xor
              crc32table8[2][(result shr 8 ) and 0xFF] xor
              crc32table8[1][(result shr 16) and 0xFF] xor
@@ -67,15 +85,27 @@ proc updateCrc32x4(crc: Crc32, buf: pointer, nbytes: int): Crc32 {.inline.} =
              crc32table8[0][(result and 0xFF) xor Crc32(currentChar[0])]
     currentChar += 1
     n -= 1
+  result
 
-# FIXME: little endian only
-proc updateCrc32x8(crc: Crc32, buf: pointer, nbytes: int): Crc32 {.inline.} =
-  result = crc
+proc updateCrc32x4(crc: Crc32, buf: pointer, nbytes: int): Crc32 {.inline.} =
+  if isLittleEndian():
+    result = updateCrc32x4Impl(crc, buf, nbytes, false)
+  else:
+    result = updateCrc32x4Impl(crc, buf, nbytes, true)
+
+# need to swap byte order for big endian machine
+template updateCrc32x8Impl(crc: Crc32, buf: pointer, nbytes: int,
+                           doSwap: static[bool]): Crc32 =
+  var result = crc
   var current = cast[ptr UncheckedArray[Crc32]](buf)
   var n = nbytes
   while n >= 8:
-    let one = result xor current[0]
-    let two = current[1]
+    when doSwap:
+      let one = result xor swap32(current[0])
+      let two = swap32(current[1])
+    else:
+      let one = result xor current[0]
+      let two = current[1]
     result = crc32table8[7][ one         and 0xFF] xor
              crc32table8[6][(one shr  8) and 0xFF] xor
              crc32table8[5][(one shr 16) and 0xFF] xor
@@ -92,6 +122,13 @@ proc updateCrc32x8(crc: Crc32, buf: pointer, nbytes: int): Crc32 {.inline.} =
              crc32table8[0][(result and 0xFF) xor Crc32(currentChar[0])]
     currentChar += 1
     n -= 1
+  result
+
+proc updateCrc32x8(crc: Crc32, buf: pointer, nbytes: int): Crc32 {.inline.} =
+  if isLittleEndian():
+    result = updateCrc32x8Impl(crc, buf, nbytes, false)
+  else:
+    result = updateCrc32x8Impl(crc, buf, nbytes, true)
 
 template updateCrc32(crc: Crc32, buf: pointer, nbytes: int): Crc32 =
   #updateCrc32x1(crc, buf, nbytes)

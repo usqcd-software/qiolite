@@ -23,7 +23,9 @@ var
 
   MPI_BXOR* {.mpih.}: MPI_Op
 
+  MPI_MODE_APPEND* {.mpih.}: cint
   MPI_MODE_CREATE* {.mpih.}: cint
+  MPI_MODE_EXCL* {.mpih.}: cint
   MPI_MODE_RDONLY* {.mpih.}: cint
   MPI_MODE_WRONLY* {.mpih.}: cint
 

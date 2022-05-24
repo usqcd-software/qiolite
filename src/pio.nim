@@ -167,8 +167,9 @@ proc read*(rd: var Reader; buf: pointer; elemsize: int;
 ## Writer
 
 type
+  # create only, trunc only, create+trunc, append
   WriteMode* = enum
-    wmCreat, wmTrunc, wmAppend
+    wmCreate, wmTruncate, wmCreateOrTruncate, wmAppend
   Writer* = ref object
     filename*: string
     isOpen*: bool
@@ -188,10 +189,15 @@ proc `xor`*(wr: Writer, x: var uint64) =
   let recv = cast[pointer](addr x)
   let err = MPI_Allreduce(send, recv, 1, MPI_UNSIGNED_LONG_LONG, MPI_BXOR, wr.comm)
 
-proc open(wr: var Writer) =
+proc open(wr: var Writer, wm: WriteMode) =
   if wr.isOpen:
     return
-  let amode = MPI_MODE_CREATE + MPI_MODE_WRONLY
+  var amode = MPI_MODE_WRONLY
+  case wm
+  of wmCreate: amode += MPI_MODE_CREATE + MPI_MODE_EXCL
+  of wmTruncate: discard
+  of wmCreateOrTruncate: amode += MPI_MODE_CREATE
+  of wmAppend: amode += MPI_MODE_APPEND
   let info = MPI_INFO_NULL
   var err = MPI_File_open(wr.comm, wr.filename.cstring, amode, info, addr wr.fh)
   if err != MPI_SUCCESS:
@@ -203,8 +209,7 @@ proc open(wr: var Writer) =
     quit(-1)
   wr.isOpen = true
 
-#proc newWriter*(fn: string, wm: WriteMode): Writer =
-proc newWriter*(fn: string): Writer =
+proc newWriter*(fn: string, wm = wmCreateOrTruncate): Writer =
   result.new
   var inited = 0'i32
   var err = MPI_Initialized(addr inited)
@@ -219,7 +224,7 @@ proc newWriter*(fn: string): Writer =
   err = MPI_Comm_rank(result.comm, addr rank)
   result.nranks = size
   result.myrank = rank
-  open result
+  open result, wm
 
 proc close*(wr: var Writer) =
   if wr.isOpen:

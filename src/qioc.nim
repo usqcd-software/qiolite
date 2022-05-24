@@ -369,13 +369,14 @@ eh.add:
     if volfmt != QIO_SINGLEFILE:
       echo "ERROR: unsupported volfmt: ", volfmt
       quit(-1)
+    let wm = wmCreateOrTruncate  # QIO_CREAT and QIO_TRUNC seem to both do this
     if oflag.mode == QIO_APPEND:
-      echo "ERROR: unsupported mode: QIO_APPEND"
+      echo "QIO_open_write: append mode not supported!"
       quit(-1)
     result = create(QIO_Writer, 1)
     result.layout = layout
     let lat = toSeq(layout.latsize, layout.latdim, int)
-    var wr = newScidacWriter($filename, lat, $xml_file, verbosity)
+    var wr = newScidacWriter($filename, lat, $xml_file, wm, verbosity)
     GC_ref(wr)
     result.writer = cast[pointer](wr)
 

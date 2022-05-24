@@ -352,10 +352,14 @@ proc setRecordGauge*(sw: var ScidacWriter, prec: string, nc = 3) =
   r.typesize = nc*nc*2*(if prec=="F": 4 else: 8)
   r.datacount = sw.lattice.len
 
-proc newScidacWriter*(fn: string, lattice: seq[int], fmd: string, verb=0): ScidacWriter =
+proc newScidacWriter*(fn: string, lattice: seq[int], fmd: string,
+                      wm=wmCreateOrTruncate, verb=0): ScidacWriter =
   new result
   result.verbosity = verb
-  var w = newWriter(fn)
+  if wm == wmAppend:
+    echo "newScidacWriter: append mode not supported!"
+    quit(-1)
+  var w = newWriter(fn, wm)
   var lw = newLimeWriter(w)
   result.lw = lw
   result.lattice = lattice
