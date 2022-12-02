@@ -41,12 +41,10 @@ var
   MPI_SUCCESS* {.mpih.}: cint
 
 
-proc MPI_Init*(argc: ptr cint; argv: ptr cstringArray): cint {.
-  importc: "MPI_Init", header: "mpi.h".}
-proc MPI_Initialized*(flag: ptr cint): cint {.
-  importc: "MPI_Initialized", header: "mpi.h".}
-proc MPI_Finalize*(): cint {.
-  importc: "MPI_Finalize", header: "mpi.h".}
+proc MPI_Init*(argc: ptr cint; argv: ptr cstringArray): cint {.mpih.}
+proc MPI_Initialized*(flag: ptr cint): cint {.mpih.}
+proc MPI_Finalize*(): cint {.mpih.}
+proc MPI_Abort*(comm: MPI_Comm; errorcode: cint): cint {.mpih.}
 
 proc MPI_Comm_rank*(comm: MPI_Comm; rank: ptr cint): cint {.
   importc: "MPI_Comm_rank", header: "mpi.h".}

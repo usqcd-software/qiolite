@@ -56,6 +56,9 @@ type
 template echo0*(sr: ScidacReader, args: varargs[untyped]) =
   sr.lr.echo0 args
 
+template checksumError*(sr: ScidacReader): bool =
+  sr.localChecksum != sr.checksum
+
 proc nextRecord*(sr: var ScidacReader) =
   if sr.lr.header.limetypeString == "scidac-binary-data" or
      sr.lr.header.limetypeString == "ildg-binary-data":
@@ -73,6 +76,7 @@ proc nextRecord*(sr: var ScidacReader) =
   let prxml = parseXml(sr.privateRecordXml)
   sr.record.version = prxml.child("version").innerText
   sr.record.date = prxml.child("date").innerText
+  sr.record.datatype = prxml.child("datatype").innerText
   sr.record.precision = prxml.child("precision").innerText
   sr.record.typesize = prxml.child("typesize").innerText.parseInt
   sr.record.datacount = prxml.child("datacount").innerText.parseInt
@@ -89,10 +93,9 @@ proc nextRecord*(sr: var ScidacReader) =
   sr.localChecksum.init
   sr.checksum.init
 
-proc newScidacReader*(fn: string, verb=0): ScidacReader =
+proc newScidacReader*(r: Reader, verb=0): ScidacReader =
   new result
   result.verbosity = verb
-  var r = newReader(fn)
   var lr = newLimeReader(r)
   result.lr = lr
   #result.lattice = lattice
@@ -118,6 +121,10 @@ proc newScidacReader*(fn: string, verb=0): ScidacReader =
   result.fileMd = lr.read
   lr.nextRecord
   result.nextRecord
+
+proc newScidacReader*(fn: string, verb=0): ScidacReader =
+  var r = newReader(fn)
+  newScidacReader(r, verb)
 
 proc close*(sr: var ScidacReader) =
   sr.lr.close
@@ -235,7 +242,7 @@ proc finishReadBinary*(sr: var ScidacReader) =
   #echo cksums
   #echo "read:   ", sr.localchecksum
   #echo "wanted: ", sr.checksum
-  if sr.localchecksum != sr.checksum:
+  if sr.checksumError:
     sr.echo0 "SciDAC IO WARNING: checksum mismatch:"
     sr.echo0 "  calculated: ", sr.localchecksum
     sr.echo0 "  expected:   ", sr.checksum

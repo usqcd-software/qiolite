@@ -40,6 +40,15 @@ proc open(rd: var Reader) =
     quit(-1)
   rd.filesize = size
 
+proc initPio*() =
+  var inited = 0'i32
+  var err = MPI_Initialized(addr inited)
+  if inited == 0:
+    err = MPI_Init()
+
+proc finiPio*() =
+  var err = MPI_Finalize()
+
 proc newReader*(fn: string): Reader =
   result.new
   var inited = 0'i32
@@ -63,6 +72,11 @@ proc close*(rd: var Reader) =
     discard MPI_File_close(addr rd.fh)
     if rd.weInitedMpi:
       var err = MPI_Finalize()
+
+proc size*(rd: var Reader): int =
+  var size: MPI_Offset
+  let err = MPI_File_get_size(rd.fh, addr size)
+  result = size
 
 proc seekTo*(rd: var Reader, offset: int) =
   var err = MPI_File_seek(rd.fh, offset, MPI_SEEK_SET)
@@ -94,6 +108,8 @@ proc read*(rd: var Reader, buf: pointer, nbytes: int): int =
   #  rd.echoAll &"ERROR: bytes read ({nread}) < nbytes ({nbytes})"
 template read*(rd: var Reader, buf: ptr typed, nbytes: SomeInteger): int =
   rd.read(cast[pointer](buf), int(nbytes))
+template read*[T](rd: var Reader, buf: var T): int =
+  rd.read(cast[pointer](addr buf), sizeof(T))
 
 proc read*(rd: var Reader, val: var SomeNumber): int =
   let buf = addr val
@@ -121,7 +137,11 @@ proc read*(rd: var Reader; buf: pointer; elemsize: int;
   var datarep0 = newString(MPI_MAX_DATAREP_STRING)
   err = MPI_File_get_view(rd.fh, addr disp0, addr etype0,
                           addr filetype0, datarep0)
+  if err != MPI_SUCCESS:
+    echo "MPI_File_get_view failed with error ", err
+    quit(-1)
   #rd.echo0 "  disp0: ", toInt(disp0)
+  #rd.echo0 "  datarep0: ", datarep0
 
   var subtype: MPI_Datatype
   err = MPI_Type_contiguous(cint elemsize, MPI_CHAR, addr subtype)
