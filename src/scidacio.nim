@@ -72,7 +72,7 @@ proc nextRecord*(sr: var ScidacReader) =
     echo "ScidacReader: unexpected limetype ", sr.lr.header.limetypeString,
      " expected scidac-private-record-xml"
     quit(-1)
-  sr.privateRecordXml = sr.lr.read
+  sr.privateRecordXml = sr.lr.read.strip(chars={'\0'})
   let prxml = parseXml(sr.privateRecordXml)
   sr.record.version = prxml.child("version").innerText
   sr.record.date = prxml.child("date").innerText
@@ -85,10 +85,10 @@ proc nextRecord*(sr: var ScidacReader) =
     echo "ScidacReader: unexpected limetype ", sr.lr.header.limetypeString,
      " expected scidac-record-xml"
     quit(-1)
-  sr.recordMd = sr.lr.read
+  sr.recordMd = sr.lr.read.strip(chars={'\0'})
   sr.lr.nextRecord
   if sr.lr.header.limetypeString == "ildg-format":
-    sr.ildgFormat = sr.lr.read
+    sr.ildgFormat = sr.lr.read.strip(chars={'\0'})
     sr.lr.nextRecord
   sr.localChecksum.init
   sr.checksum.init
@@ -103,7 +103,7 @@ proc newScidacReader*(r: Reader, verb=0): ScidacReader =
     echo "ScidacReader: unexpected limetype ", lr.header.limetypeString,
      " expected scidac-private-file-xml"
     quit(-1)
-  result.privateFileXml = lr.read
+  result.privateFileXml = lr.read.strip(chars={'\0'})
   var pfxml = parseXml(result.privateFileXml)
   #echo pfxml
   let dims = pfxml.child("dims").innerText.strip.split.mapit(parseInt(it))
@@ -118,7 +118,7 @@ proc newScidacReader*(r: Reader, verb=0): ScidacReader =
     echo "ScidacReader: unexpected limetype ", lr.header.limetypeString,
      " expected scidac-file-xml"
     quit(-1)
-  result.fileMd = lr.read
+  result.fileMd = lr.read.strip(chars={'\0'})
   lr.nextRecord
   result.nextRecord
 
