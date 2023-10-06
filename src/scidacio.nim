@@ -515,7 +515,9 @@ proc testWrite(fn: string) =
   ech0 sw.fileMd.maybeXml
   sw.setRecordGauge("F")
   sw.initWriteBinary("Binary data 1")
-  let n = sw.lw.header.length
+  let n = sw.lw.header.length  # FIXME
+  #let sitebytes = sw.record.typesize * sw.record.datacount
+  #let outbytes = nsites * sitebytes
   var buf = alloc(n)
   let offs = newSeq[int](lat.len)
   sw.writeBinary(buf, lat, offs)
