@@ -1,7 +1,8 @@
 #!/bin/bash
 
 #d=`date -u '+%Y-%m-%d_%H-%M'`
-n="qiolite-0.2.0"
+v=`grep version qiolite.nimble |sed 's/.*= "\(.*\)".*/\1/'`
+n="qiolite-$v"
 t="$n.tgz"
 ln -s . $n
 f="$n/Makefile $n/make.inc"
