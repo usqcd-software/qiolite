@@ -150,7 +150,7 @@ proc close*(lw: var LimeWriter) =
   if n > 0:
     let pad = '\0'.repeat(n)
     lw.writer.seekTo(lw.offset + lw.header.length)
-    let nwrite = lw.writer.write(addr pad[0], n)
+    let nwrite = lw.writer.write(unsafeaddr pad[0], n)
     if nwrite != n:
       echo "Lime writeHeader: short write ", nwrite, " expected ", n
       quit(-1)
