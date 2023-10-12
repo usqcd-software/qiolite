@@ -146,6 +146,14 @@ proc newLimeWriter*[W](w: W): LimeWriter[W] =
   #echo "newLimeWriter: byterev: ", result.byterev
 
 proc close*(lw: var LimeWriter) =
+  let n = lw.padlen - lw.header.length
+  if n > 0:
+    let pad = '\0'.repeat(n)
+    lw.writer.seekTo(lw.offset + lw.header.length)
+    let nwrite = lw.writer.write(addr pad[0], n)
+    if nwrite != n:
+      echo "Lime writeHeader: short write ", nwrite, " expected ", n
+      quit(-1)
   close lw.writer
 
 proc setHeader*(lw: var LimeWriter; mb,me: bool; length: int; limetype: string) =

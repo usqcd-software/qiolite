@@ -8,6 +8,8 @@ proc `$`(dur: Duration): string =
   let sec = 1e-6*dur.inMicroseconds.float
   result = sec.formatFloat(ffDecimal, 6)
 
+const xmlHeader0 = """<?xml version="1.0" encoding="UTF-8"?>"""
+
 type
   ScidacChecksum* = tuple[a: uint32, b: uint32]
 
@@ -272,7 +274,7 @@ template TXT(x: untyped): untyped = xmltree.newText(x)
 
 proc createPrivateFileXml(sw: var ScidacWriter) =
   let spacetime = $sw.lattice.len
-  let dims = sw.lattice.join(" ")
+  let dims = sw.lattice.join(" ") & " "  # extra space to match QIO
   var pfxml =
     TAG scidacFile(
       TAG version(TXT "1.1"),
@@ -280,7 +282,7 @@ proc createPrivateFileXml(sw: var ScidacWriter) =
       TAG dims(TXT dims),
       TAG volfmt(TXT "0")
     )
-  var s = xmlHeader
+  var s = xmlHeader0
   s.add(pfxml, indWidth=0)
   sw.privateFileXml = s.replace("\n","")
   #echo sw.privateFileXml
@@ -312,23 +314,23 @@ proc createPrivateRecordXml(sw: var ScidacWriter) =
     prxml.add(TAG spins(TXT spins))
   prxml.add(TAG typesize(TXT typesize))
   prxml.add(TAG datacount(TXT datacount))
-  var s = xmlHeader
+  var s = xmlHeader0
   s.add(prxml, indWidth=0)
   sw.privateRecordXml = s.replace("\n","")
   #echo sw.privateRecordXml
 
 proc createChecksumXml(sw: var ScidacWriter) =
-  let a = toHex(sw.checksum.a)
-  let b = toHex(sw.checksum.b)
+  let a = toHex(sw.checksum.a).toLower.strip(trailing=false,chars={'0'})
+  let b = toHex(sw.checksum.b).toLower.strip(trailing=false,chars={'0'})
   var csxml =
     TAG scidacChecksum(
       TAG version(TXT "1.0"),
       TAG suma(TXT a),
       TAG sumb(TXT b)
     )
-  var s = xmlHeader
+  var s = xmlHeader0
   s.add(csxml, indWidth=0)
-  sw.checksumXml = s.replace("\n","")
+  sw.checksumXml = s.replace("\n","") & "\0"  # extra null to match QIO
   #echo sw.checksumXml
 
 proc setRecord*(sw: var ScidacWriter) =
@@ -355,7 +357,7 @@ proc setRecordGauge*(sw: var ScidacWriter, prec: string, nc = 3) =
   r.datatype = "QDP_" & prec & $nc & "_ColorMatrix"
   r.precision = prec
   r.colors = nc
-  r.spins = -1
+  r.spins = 1
   r.typesize = nc*nc*2*(if prec=="F": 4 else: 8)
   r.datacount = sw.lattice.len
 
@@ -374,13 +376,14 @@ proc newScidacWriter*(fn: string, lattice: seq[int], fmd: string,
   result.volfmt = 0
   result.fileMd = fmd
   result.createPrivateFileXml
-  let pfxml = result.privateFileXml
+  let pfxml = result.privateFileXml & "\0"  # extra null to match QIO
   lw.setHeader(true, false, pfxml.len, "scidac-private-file-xml")
   lw.writeHeader
   lw.write pfxml
-  lw.setHeader(false, true, fmd.len, "scidac-file-xml")
+  let fmd0 = fmd & "\0"  # extra null to match QIO
+  lw.setHeader(false, true, fmd0.len, "scidac-file-xml")
   lw.writeHeader
-  lw.write fmd
+  lw.write fmd0
 
 proc close*(sw: var ScidacWriter) =
   sw.lw.close
@@ -389,13 +392,14 @@ proc close*(sw: var ScidacWriter) =
 proc initWriteBinary*(sw: var ScidacWriter; rmd: string) =
   sw.createPrivateRecordXml
   sw.recordMd = rmd
-  let prxml = sw.privateRecordXml
+  let prxml = sw.privateRecordXml & "\0"  # extra null to match QIO
   sw.lw.setHeader(true, false, prxml.len, "scidac-private-record-xml")
   sw.lw.writeHeader
   sw.lw.write prxml
-  sw.lw.setHeader(false, false, rmd.len, "scidac-record-xml")
+  let rmd0 = rmd & "\0"  # extra null to match QIO
+  sw.lw.setHeader(false, false, rmd0.len, "scidac-record-xml")
   sw.lw.writeHeader
-  sw.lw.write rmd
+  sw.lw.write rmd0
   let sitebytes = sw.record.typesize * sw.record.datacount
   let databytes = sw.latvol * sitebytes
   sw.lw.setHeader(false, false, databytes, "scidac-binary-data")
@@ -444,7 +448,7 @@ proc finishWriteBinary*(sw: var ScidacWriter) =
   let pchksum = cast[ptr uint64](addr sw.checksum)
   sw.lw.writer.xor pchksum[]
   sw.createChecksumXml
-  sw.lw.setHeader(false, false, sw.checksumXml.len, "scidac-checksum")
+  sw.lw.setHeader(false, true, sw.checksumXml.len, "scidac-checksum")
   sw.lw.writeHeader
   sw.lw.write sw.checksumXml
 
@@ -515,10 +519,10 @@ proc testWrite(fn: string) =
   ech0 sw.fileMd.maybeXml
   sw.setRecordGauge("F")
   sw.initWriteBinary("Binary data 1")
-  let n = sw.lw.header.length  # FIXME
-  #let sitebytes = sw.record.typesize * sw.record.datacount
-  #let outbytes = nsites * sitebytes
-  var buf = alloc(n)
+  let nsites = lat.foldl(a*b)
+  let nbytes = nsites * sw.record.typesize * sw.record.datacount
+  #echo rnk, " ", nbytes
+  var buf = alloc(nbytes)
   let offs = newSeq[int](lat.len)
   sw.writeBinary(buf, lat, offs)
   dealloc(buf)
